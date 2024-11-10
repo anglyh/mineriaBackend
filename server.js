@@ -13,7 +13,6 @@ const path = require("path");
 const { Question, seedQuestions } = require("./models/question.model");
 const Game = require("./models/game.model");
 
-// Middleware
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
@@ -29,50 +28,66 @@ const generatePin = () => Math.random().toString(36).substring(2, 8).toUpperCase
 
 const registerTimeoutAnswer = async (game, playerId) => {
   try {
-    const currentGame = await Game.findById(game._id);
-    if (!currentGame || currentGame.status !== "playing") return;
-
-    const player = currentGame.players.find(p => p.id === playerId);
+    const player = game.players.find(p => p.id === playerId);
     if (!player) return;
 
-    const hasAnswered = player.answers.some(a => 
-      a.questionId.toString() === currentGame.questions[currentGame.currentQuestion]._id.toString()
-    );
-    if (hasAnswered) return;
+    const currentQuestionId = game.questions[game.currentQuestion]._id.toString();
+    const hasAnswered = player.answers.some(a => a.questionId.toString() === currentQuestionId);
 
-    const currentQuestion = currentGame.questions[currentGame.currentQuestion];
-    
+    if (hasAnswered) return; // Evita duplicar respuestas
+
     player.answers.push({
-      questionId: currentQuestion._id,
+      questionId: currentQuestionId,
       givenAnswer: { pictogram: "", colors: [], number: "" },
       isCorrect: false,
-      pointsAwarded: 0
+      pointsAwarded: 0,
     });
 
-    console.log(`Jugador ${player.username} (ID: ${playerId}) - Timeout - No respondió - Puntos: 0 - Total: ${player.score}`);
-    
-    await currentGame.save();
+    await game.save();
 
-    io.to(currentGame.pin).emit("player-answered", {
+    io.to(game.pin).emit("player-answered", {
       playerId: player.id,
       isCorrect: false,
       pointsAwarded: 0,
       playerScore: player.score,
     });
-
   } catch (error) {
     console.error("Error al registrar timeout:", error);
   }
 };
 
-const processTimeouts = async (game, players) => {
-  try {
-    for (const playerId of players) {
-      await registerTimeoutAnswer(game, playerId);
-    }
-  } catch (error) {
-    console.error("Error procesando timeouts:", error);
+const processTimeouts = async (game) => {
+  const currentPlayers = game.players.map(p => p.id);
+  for (const playerId of currentPlayers) {
+    await registerTimeoutAnswer(game, playerId);
   }
+};
+
+// Definir emitQuestion como una función independiente
+const emitQuestion = async (game, questionIndex) => {
+  if (questionIndex >= game.questions.length) {
+    endGame(game, game.pin);
+    return;
+  }
+
+  const question = game.questions[questionIndex];
+  game.questionStartTime = Date.now();
+  await game.save();
+
+  io.to(game.pin).emit("game-started", {
+    question: question,
+    timeLimit: game.timeLimitPerQuestion / 1000,
+  });
+
+  setTimeout(async () => {
+    const updatedGame = await Game.findById(game._id).populate("questions");
+    if (updatedGame && updatedGame.status === "playing") {
+      await processTimeouts(updatedGame); // Procesar timeouts
+      updatedGame.currentQuestion += 1;
+      await updatedGame.save();
+      emitQuestion(updatedGame, updatedGame.currentQuestion); // Llamada recursiva
+    }
+  }, game.timeLimitPerQuestion);
 };
 
 io.on("connection", (socket) => {
@@ -88,7 +103,7 @@ io.on("connection", (socket) => {
         pin,
         timeLimitPerQuestion: timeLimit * 1000,
         hostId: socket.id,
-        questions: questions.map((q) => q._id),
+        questions: questions.map(q => q._id),
         status: "waiting",
       });
 
@@ -112,10 +127,7 @@ io.on("connection", (socket) => {
       if (game.status === "playing") {
         const currentQuestion = game.questions[game.currentQuestion];
         const timeElapsed = Date.now() - game.questionStartTime;
-        const timeRemaining = Math.max(
-          0,
-          Math.floor((game.timeLimitPerQuestion - timeElapsed) / 1000)
-        );
+        const timeRemaining = Math.max(0, Math.floor((game.timeLimitPerQuestion - timeElapsed) / 1000));
 
         socket.emit("game-started", {
           question: currentQuestion,
@@ -146,60 +158,23 @@ io.on("connection", (socket) => {
   socket.on("start-game", async ({ pin }, callback) => {
     try {
       const game = await Game.findOne({ pin }).populate("questions");
-
+  
       if (!game) {
         return callback({ success: false, error: "Juego no encontrado" });
       }
-
+  
       if (game.status !== "waiting") {
         return callback({ success: false, error: "El juego ya ha comenzado" });
       }
-
+  
       game.status = "playing";
       game.currentQuestion = 0;
       game.questionStartTime = Date.now();
       await game.save();
-
-      const emitQuestion = async (questionIndex) => {
-        if (questionIndex >= game.questions.length) {
-          endGame(game, pin);
-          return;
-        }
-
-        const question = game.questions[questionIndex];
-        game.questionStartTime = Date.now();
-        await game.save();
-
-        const currentPlayers = game.players.map(p => p.id);
-
-        io.to(pin).emit("game-started", {
-          question: question,
-          timeLimit: game.timeLimitPerQuestion / 1000,
-        });
-
-        setTimeout(async () => {
-          const updatedGame = await Game.findOne({ pin }).populate("questions");
-          if (updatedGame && updatedGame.status === "playing") {
-            const answeredPlayers = new Set(
-              updatedGame.players
-                .filter(p => p.answers.length > questionIndex)
-                .map(p => p.id)
-            );
-
-            const nonRespondingPlayers = currentPlayers.filter(
-              playerId => !answeredPlayers.has(playerId)
-            );
-
-            await processTimeouts(updatedGame, nonRespondingPlayers);
-
-            updatedGame.currentQuestion += 1;
-            await updatedGame.save();
-            emitQuestion(updatedGame.currentQuestion);
-          }
-        }, game.timeLimitPerQuestion);
-      };
-
-      emitQuestion(game.currentQuestion);
+  
+      // Inicia el ciclo de preguntas
+      emitQuestion(game, game.currentQuestion);
+  
       callback({ success: true });
     } catch (error) {
       callback({ success: false, error: error.message });
@@ -218,7 +193,7 @@ io.on("connection", (socket) => {
       }
 
       const currentQuestion = game.questions[game.currentQuestion];
-      const player = game.players.find((p) => p.id === socket.id);
+      const player = game.players.find(p => p.id === socket.id);
 
       if (!player) {
         return callback({ success: false, error: "Jugador no encontrado" });
@@ -236,7 +211,7 @@ io.on("connection", (socket) => {
 
         const answerColors = Array.isArray(answer.colors) ? answer.colors : [];
         const correctColors = new Set(Array.isArray(correctAnswer.colors) ? correctAnswer.colors : []);
-        if (answerColors.length !== correctColors.size || !answerColors.every((color) => correctColors.has(color))) {
+        if (answerColors.length !== correctColors.size || !answerColors.every(color => correctColors.has(color))) {
           isCorrect = false;
         }
       }
@@ -278,7 +253,7 @@ io.on("connection", (socket) => {
       const game = await Game.findOne({ "players.id": socket.id });
 
       if (game) {
-        game.players = game.players.filter((p) => p.id !== socket.id);
+        game.players = game.players.filter(p => p.id !== socket.id);
         await game.save();
 
         io.to(game.pin).emit("player-left", {
@@ -299,7 +274,7 @@ const endGame = async (game, pin) => {
   const updatedGame = await Game.findById(game._id);
   const totalQuestions = updatedGame.questions.length;
 
-  const results = updatedGame.players.map((player) => ({
+  const results = updatedGame.players.map(player => ({
     username: player.username,
     score: player.score || 0,
     correctAnswers: player.correctAnswers || 0,
