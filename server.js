@@ -17,18 +17,63 @@ const Game = require("./models/game.model");
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
-// Conectar a MongoDB
 mongoose
   .connect("mongodb://localhost/dots-go")
   .then(() => {
     console.log("Conectado a MongoDB");
-    seedQuestions(); // Inicializar preguntas
+    seedQuestions();
   })
   .catch((err) => console.error("Error conectando a MongoDB:", err));
 
-// Función para generar PIN aleatorio
-const generatePin = () =>
-  Math.random().toString(36).substring(2, 8).toUpperCase();
+const generatePin = () => Math.random().toString(36).substring(2, 8).toUpperCase();
+
+const registerTimeoutAnswer = async (game, playerId) => {
+  try {
+    const currentGame = await Game.findById(game._id);
+    if (!currentGame || currentGame.status !== "playing") return;
+
+    const player = currentGame.players.find(p => p.id === playerId);
+    if (!player) return;
+
+    const hasAnswered = player.answers.some(a => 
+      a.questionId.toString() === currentGame.questions[currentGame.currentQuestion]._id.toString()
+    );
+    if (hasAnswered) return;
+
+    const currentQuestion = currentGame.questions[currentGame.currentQuestion];
+    
+    player.answers.push({
+      questionId: currentQuestion._id,
+      givenAnswer: { pictogram: "", colors: [], number: "" },
+      isCorrect: false,
+      pointsAwarded: 0
+    });
+
+    console.log(`Jugador ${player.username} (ID: ${playerId}) - Timeout - No respondió - Puntos: 0 - Total: ${player.score}`);
+    
+    await currentGame.save();
+
+    io.to(currentGame.pin).emit("player-answered", {
+      playerId: player.id,
+      isCorrect: false,
+      pointsAwarded: 0,
+      playerScore: player.score,
+    });
+
+  } catch (error) {
+    console.error("Error al registrar timeout:", error);
+  }
+};
+
+const processTimeouts = async (game, players) => {
+  try {
+    for (const playerId of players) {
+      await registerTimeoutAnswer(game, playerId);
+    }
+  } catch (error) {
+    console.error("Error procesando timeouts:", error);
+  }
+};
 
 io.on("connection", (socket) => {
   console.log("Socket conectado:", socket.id);
@@ -41,7 +86,7 @@ io.on("connection", (socket) => {
 
       const game = new Game({
         pin,
-        timeLimitPerQuestion: timeLimit * 1000, // En milisegundos
+        timeLimitPerQuestion: timeLimit * 1000,
         hostId: socket.id,
         questions: questions.map((q) => q._id),
         status: "waiting",
@@ -64,7 +109,6 @@ io.on("connection", (socket) => {
         return callback({ success: false, error: "Juego no encontrado" });
       }
 
-      // Si el juego ya está en progreso, envía la pregunta actual y el tiempo restante
       if (game.status === "playing") {
         const currentQuestion = game.questions[game.currentQuestion];
         const timeElapsed = Date.now() - game.questionStartTime;
@@ -75,7 +119,7 @@ io.on("connection", (socket) => {
 
         socket.emit("game-started", {
           question: currentQuestion,
-          timeLimit: timeRemaining, // Tiempo en segundos
+          timeLimit: timeRemaining,
         });
       }
 
@@ -84,6 +128,8 @@ io.on("connection", (socket) => {
           id: socket.id,
           username,
           score: 0,
+          correctAnswers: 0,
+          answers: [],
         });
         await game.save();
         socket.join(pin);
@@ -111,37 +157,47 @@ io.on("connection", (socket) => {
 
       game.status = "playing";
       game.currentQuestion = 0;
-      game.questionStartTime = Date.now(); // Agrega el tiempo de inicio de la pregunta
+      game.questionStartTime = Date.now();
       await game.save();
 
-      // Dentro de emitQuestion en el backend
       const emitQuestion = async (questionIndex) => {
         if (questionIndex >= game.questions.length) {
-          game.status = "finished";
-          await game.save();
-          io.to(pin).emit("game-ended", { message: "El juego ha terminado" });
+          endGame(game, pin);
           return;
         }
 
         const question = game.questions[questionIndex];
         game.questionStartTime = Date.now();
-        const nextQuestionTime = game.questionStartTime + game.timeLimitPerQuestion;
         await game.save();
+
+        const currentPlayers = game.players.map(p => p.id);
 
         io.to(pin).emit("game-started", {
           question: question,
           timeLimit: game.timeLimitPerQuestion / 1000,
-          nextQuestionTime,
         });
 
-        setTimeout(() => {
-          game.currentQuestion += 1;
-          game.save().then(() => {
-            emitQuestion(game.currentQuestion);
-          });
+        setTimeout(async () => {
+          const updatedGame = await Game.findOne({ pin }).populate("questions");
+          if (updatedGame && updatedGame.status === "playing") {
+            const answeredPlayers = new Set(
+              updatedGame.players
+                .filter(p => p.answers.length > questionIndex)
+                .map(p => p.id)
+            );
+
+            const nonRespondingPlayers = currentPlayers.filter(
+              playerId => !answeredPlayers.has(playerId)
+            );
+
+            await processTimeouts(updatedGame, nonRespondingPlayers);
+
+            updatedGame.currentQuestion += 1;
+            await updatedGame.save();
+            emitQuestion(updatedGame.currentQuestion);
+          }
         }, game.timeLimitPerQuestion);
       };
-
 
       emitQuestion(game.currentQuestion);
       callback({ success: true });
@@ -150,103 +206,62 @@ io.on("connection", (socket) => {
     }
   });
 
-  // Nuevo evento para que los jugadores puedan solicitar la pregunta actual y el tiempo restante
-  socket.on("request-current-question", async ({ pin }, callback) => {
-    try {
-      const game = await Game.findOne({ pin }).populate("questions");
-
-      if (!game) {
-        return callback({ success: false, error: "Juego no encontrado" });
-      }
-
-      if (game.status === "playing") {
-        const currentQuestion = game.questions[game.currentQuestion];
-        const timeElapsed = Date.now() - game.questionStartTime;
-        const timeRemaining = Math.max(
-          0,
-          Math.floor((game.timeLimitPerQuestion - timeElapsed) / 1000)
-        );
-
-        callback({
-          success: true,
-          question: currentQuestion,
-          timeLeft: timeRemaining,
-        });
-      } else {
-        callback({ success: false, error: "El juego aún no ha comenzado" });
-      }
-    } catch (error) {
-      console.error("Error al manejar request-current-question:", error);
-      callback({ success: false, error: error.message });
-    }
-  });
-
   socket.on("submit-answer", async ({ pin, answer, responseTime }, callback) => {
     try {
       const game = await Game.findOne({ pin }).populate("questions");
-  
+
       if (!game) {
         return callback({ success: false, error: "Juego no encontrado" });
       }
       if (game.status !== "playing") {
         return callback({ success: false, error: "Juego no válido" });
       }
-  
+
       const currentQuestion = game.questions[game.currentQuestion];
       const player = game.players.find((p) => p.id === socket.id);
-  
+
       if (!player) {
         return callback({ success: false, error: "Jugador no encontrado" });
       }
-  
-      // Lógica de verificación de respuesta
-      let isCorrect = true;
-      const correctAnswer = currentQuestion.correctAnswer;
-  
-      // Verificar pictograma
-      if (answer.pictogram !== correctAnswer.pictogram) {
-        isCorrect = false;
+
+      const isEmptyAnswer = !answer.pictogram && (!answer.colors || answer.colors.length === 0) && !answer.number;
+      let isCorrect = false;
+
+      if (!isEmptyAnswer) {
+        isCorrect = true;
+        const correctAnswer = currentQuestion.correctAnswer;
+
+        if (answer.pictogram !== correctAnswer.pictogram) isCorrect = false;
+        if (answer.number !== correctAnswer.number) isCorrect = false;
+
+        const answerColors = Array.isArray(answer.colors) ? answer.colors : [];
+        const correctColors = new Set(Array.isArray(correctAnswer.colors) ? correctAnswer.colors : []);
+        if (answerColors.length !== correctColors.size || !answerColors.every((color) => correctColors.has(color))) {
+          isCorrect = false;
+        }
       }
-  
-      // Verificar número
-      if (answer.number !== correctAnswer.number) {
-        isCorrect = false;
-      }
-  
-      // Verificar colores (sin importar el orden)
-      const answerColors = Array.isArray(answer.colors) ? answer.colors : [];
-      const correctColors = new Set(
-        Array.isArray(correctAnswer.colors) ? correctAnswer.colors : []
-      );
-      if (
-        answerColors.length !== correctColors.size ||
-        !answerColors.every((color) => correctColors.has(color))
-      ) {
-        isCorrect = false;
-      }
-  
-      // Cálculo de puntos basado en el tiempo restante
+
       let pointsAwarded = 0;
       if (isCorrect) {
-        const timeLimit = game.timeLimitPerQuestion;
-        const timeFactor = (timeLimit - responseTime) / timeLimit;
-        pointsAwarded = Math.floor(100 * timeFactor); // Calcula puntos en función del tiempo
-  
+        const timeFactor = (game.timeLimitPerQuestion - responseTime) / game.timeLimitPerQuestion;
+        pointsAwarded = Math.floor(100 * timeFactor);
         player.score += pointsAwarded;
-        await game.save();
+        player.correctAnswers += 1;
       }
-  
-      // Registro en consola de los resultados de cada respuesta
-      console.log(`Respuesta del jugador ${player.username} (ID: ${socket.id}):`);
-      console.log(`- Pregunta: ${currentQuestion.title}`);
-      console.log(`- Respuesta correcta: ${isCorrect ? "Sí" : "No"}`);
-      console.log(`- Puntos otorgados: ${pointsAwarded}`);
-      console.log(`- Puntaje total del jugador: ${player.score}`);
-      console.log("----------------------------");
-  
+
+      player.answers.push({
+        questionId: currentQuestion._id,
+        givenAnswer: answer,
+        isCorrect,
+        pointsAwarded,
+      });
+
+      await game.save();
+
+      console.log(`Jugador ${player.username} (ID: ${socket.id}) - Correcta: ${isCorrect} - Puntos: ${pointsAwarded} - Total: ${player.score}`);
+
       callback({ success: true, isCorrect, pointsAwarded });
-  
-      // Notificar a todos los jugadores de la respuesta
+
       io.to(pin).emit("player-answered", {
         playerId: socket.id,
         isCorrect,
@@ -257,13 +272,10 @@ io.on("connection", (socket) => {
       callback({ success: false, error: error.message });
     }
   });
-  
 
   socket.on("disconnect", async () => {
     try {
-      const game = await Game.findOne({
-        "players.id": socket.id,
-      });
+      const game = await Game.findOne({ "players.id": socket.id });
 
       if (game) {
         game.players = game.players.filter((p) => p.id !== socket.id);
@@ -279,6 +291,24 @@ io.on("connection", (socket) => {
     }
   });
 });
+
+const endGame = async (game, pin) => {
+  game.status = "finished";
+  await game.save();
+
+  const updatedGame = await Game.findById(game._id);
+  const totalQuestions = updatedGame.questions.length;
+
+  const results = updatedGame.players.map((player) => ({
+    username: player.username,
+    score: player.score || 0,
+    correctAnswers: player.correctAnswers || 0,
+    totalQuestions,
+  }));
+
+  console.log("Resultados finales enviados desde el backend:", results);
+  io.to(pin).emit("game-ended", { results });
+};
 
 const PORT = process.env.PORT || 3000;
 http.listen(PORT, () => {

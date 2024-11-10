@@ -1,5 +1,33 @@
 const mongoose = require('mongoose');
 
+const playerSchema = new mongoose.Schema({
+  id: String,
+  username: String,
+  score: {
+    type: Number,
+    default: 0
+  },
+  correctAnswers: {
+    type: Number,
+    default: 0
+  },
+  answers: [
+    {
+      questionId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Question'
+      },
+      givenAnswer: {
+        pictogram: String,
+        colors: [String],
+        number: Number
+      },
+      isCorrect: Boolean,
+      pointsAwarded: Number
+    }
+  ]
+});
+
 const gameSchema = new mongoose.Schema({
   pin: {
     type: String,
@@ -10,22 +38,17 @@ const gameSchema = new mongoose.Schema({
     enum: ['waiting', 'playing', 'finished'],
     default: 'waiting'
   },
-  players: [{
-    id: String,
-    username: String,
-    score: {
-      type: Number,
-      default: 0
-    }
-  }],
+  players: [playerSchema],
   currentQuestion: {
     type: Number,
     default: -1
   },
-  questions: [{
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Question'
-  }],
+  questions: [
+    {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Question'
+    }
+  ],
   timeLimitPerQuestion: {
     type: Number,
     required: true
