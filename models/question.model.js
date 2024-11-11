@@ -11,7 +11,6 @@ const questionSchema = new mongoose.Schema({
 
 const Question = mongoose.model('Question', questionSchema);
 
-// Seed script para inicializar las preguntas
 const seedQuestions = async () => {
   const questionsData = [
     {
@@ -73,7 +72,7 @@ const seedQuestions = async () => {
     {
       title: "Miscelaneos",
       correctAnswer: {
-        pictogram: null,
+        pictogram: "triangulo",
         colors: ["white", "black"],
         number: 9
       }
