@@ -1,6 +1,8 @@
 const express = require("express");
 const app = express();
 const http = require("http").createServer(app);
+const cors = require("cors"); // Importa el paquete cors
+
 const io = require("socket.io")(http, {
   cors: {
     origin: "http://0.0.0.0:5173",
@@ -12,11 +14,16 @@ const mongoose = require("mongoose");
 const path = require("path");
 const { Question, seedQuestions } = require("./models/question.model");
 const Game = require("./models/game.model");
+const questionController = require('./controllers/questionController');
+app.use(cors());
+
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
-mongoose
+app.get('/api/questions', questionController.getAllQuestions);
+
+mongoose  
   .connect("mongodb://localhost/dots-go")
   .then(() => {
     console.log("Conectado a MongoDB");
@@ -95,9 +102,9 @@ io.on("connection", (socket) => {
 
   socket.on("create-game", async (gameData, callback) => {
     try {
-      const { timeLimit } = gameData;
+      const { timeLimit , questionIds} = gameData;
       const pin = generatePin();
-      const questions = await Question.find();
+      const questions = await Question.find({ '_id': { $in: questionIds } });
 
       const game = new Game({
         pin,
@@ -218,7 +225,7 @@ io.on("connection", (socket) => {
 
       let pointsAwarded = 0;
       if (isCorrect) {
-        const timeFactor = (game.timeLimitPerQuestion - responseTime) / game.timeLimitPerQuestion;
+        const timeFactor = (game.timeLimitPerQuestion - (responseTime*1000)) / game.timeLimitPerQuestion;
         pointsAwarded = Math.floor(100 * timeFactor);
         player.score += pointsAwarded;
         player.correctAnswers += 1;
