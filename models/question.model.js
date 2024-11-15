@@ -17,7 +17,7 @@ const seedQuestions = async () => {
       title: "Explosivos",
       correctAnswer: {
         pictogram: "explosivo",
-        colors: ["orange"],
+        colors: ["orange", "black"],
         number: 1
       }
     },
@@ -25,7 +25,7 @@ const seedQuestions = async () => {
       title: "Radioactivos",
       correctAnswer: {
         pictogram: "radioactivo",
-        colors: ["white", "yellow"],
+        colors: ["white", "yellow", "black"],
         number: 7
       }
     },
@@ -33,7 +33,7 @@ const seedQuestions = async () => {
       title: "Peroxido Organico",
       correctAnswer: {
         pictogram: "fuego",
-        colors: ["red", "yellow"],
+        colors: ["red", "yellow", "black"],
         number: 5.2
       }
     },
@@ -41,7 +41,7 @@ const seedQuestions = async () => {
       title: "Oxidante",
       correctAnswer: {
         pictogram: "oxidante",
-        colors: ["yellow"],
+        colors: ["yellow", "black"],
         number: 5.1
       }
     },
@@ -49,7 +49,7 @@ const seedQuestions = async () => {
       title: "Gas Inflamable",
       correctAnswer: {
         pictogram: "fuego",
-        colors: ["red"],
+        colors: ["red", "white", "black"],
         number: 2
       }
     },
@@ -65,7 +65,7 @@ const seedQuestions = async () => {
       title: "Gas Oxidante",
       correctAnswer: {
         pictogram: "oxidante",
-        colors: ["yellow"],
+        colors: ["yellow", "black"],
         number: 2
       }
     },
@@ -89,7 +89,7 @@ const seedQuestions = async () => {
       title: "Sustancias toxicas",
       correctAnswer: {
         pictogram: "calavera",
-        colors: ["white"],
+        colors: ["white", "black"],
         number: 6
       }
     },
@@ -97,7 +97,7 @@ const seedQuestions = async () => {
       title: "Sustancia infecciosa",
       correctAnswer: {
         pictogram: "riesgoBiologico",
-        colors: ["white"],
+        colors: ["white", "black"],
         number: 6
       }
     },
@@ -105,7 +105,7 @@ const seedQuestions = async () => {
       title: "Gas no inflamable",
       correctAnswer: {
         pictogram: "botella",
-        colors: ["green"],
+        colors: ["green", "black", "white"],
         number: 2
       }
     },
@@ -113,7 +113,7 @@ const seedQuestions = async () => {
       title: "Gases toxicos",
       correctAnswer: {
         pictogram: "calavera",
-        colors: ["white"],
+        colors: ["white", "black"],
         number: 2
       }
     },
@@ -121,7 +121,7 @@ const seedQuestions = async () => {
       title: "Solidos inflamables",
       correctAnswer: {
         pictogram: "fuego",
-        colors: ["red", "white"],
+        colors: ["red", "white", "black"],
         number: 4
       }
     },
@@ -129,7 +129,7 @@ const seedQuestions = async () => {
       title: "Liquidos inflamables",
       correctAnswer: {
         pictogram: "fuego",
-        colors: ["red"],
+        colors: ["red", "white", "black"],
         number: 3
       }
     },
@@ -137,7 +137,7 @@ const seedQuestions = async () => {
       title: "Solidos que reaccionan con el agua",
       correctAnswer: {
         pictogram: "fuego",
-        colors: ["blue"],
+        colors: ["blue", "black", "white"],
         number: 4
       }
     },
@@ -145,7 +145,7 @@ const seedQuestions = async () => {
       title: "Solidos de combustion espontanea",
       correctAnswer: {
         pictogram: "fuego",
-        colors: ["white", "red"],
+        colors: ["white", "red", "black"],
         number: 4
       }
     }
