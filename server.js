@@ -292,7 +292,7 @@ const endGame = async (game, pin) => {
   io.to(pin).emit("game-ended", { results });
 };
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 80;
 http.listen(PORT, () => {
   console.log(`Servidor corriendo en puerto ${PORT}`);
 });
