@@ -5,7 +5,7 @@ const cors = require("cors"); // Importa el paquete cors
 
 const io = require("socket.io")(http, {
   cors: {
-    origin: "http://0.0.0.0:5173",
+    origin: "*",
     methods: ["GET", "POST"],
   },
   transports: ["websocket"],
