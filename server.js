@@ -195,59 +195,60 @@ io.on("connection", (socket) => {
   socket.on("submit-answer", async ({ pin, answer, responseTime }, callback) => {
     try {
       const game = await Game.findOne({ pin }).populate("questions");
-
+  
       if (!game) {
         return callback({ success: false, error: "Juego no encontrado" });
       }
       if (game.status !== "playing") {
         return callback({ success: false, error: "Juego no válido" });
       }
-
+  
       const currentQuestion = game.questions[game.currentQuestion];
       const player = game.players.find(p => p.id === socket.id);
-
+  
       if (!player) {
         return callback({ success: false, error: "Jugador no encontrado" });
       }
-
+  
       const isEmptyAnswer = !answer.pictogram && (!answer.colors || answer.colors.length === 0) && !answer.number;
       let isCorrect = false;
-
+  
       if (!isEmptyAnswer) {
         isCorrect = true;
         const correctAnswer = currentQuestion.correctAnswer;
-
+  
         if (answer.pictogram !== correctAnswer.pictogram) isCorrect = false;
         if (answer.number !== correctAnswer.number) isCorrect = false;
-
+  
         const answerColors = Array.isArray(answer.colors) ? answer.colors : [];
         const correctColors = new Set(Array.isArray(correctAnswer.colors) ? correctAnswer.colors : []);
         if (answerColors.length !== correctColors.size || !answerColors.every(color => correctColors.has(color))) {
           isCorrect = false;
         }
       }
-
+  
       let pointsAwarded = 0;
       if (isCorrect) {
-        const timeFactor = (game.timeLimitPerQuestion - (responseTime*1000)) / game.timeLimitPerQuestion;
-        pointsAwarded = Math.floor(100 * timeFactor);
+        // Ajustar el cálculo del puntaje para que los jugadores que respondan más rápido reciban más puntos
+        const timeFactor = (responseTime * 1000) / game.timeLimitPerQuestion;
+        pointsAwarded = Math.floor(100 * (1 - timeFactor)); // Invertir el factor de tiempo
         player.score += pointsAwarded;
         player.correctAnswers += 1;
       }
-
+  
       player.answers.push({
         questionId: currentQuestion._id,
         givenAnswer: answer,
         isCorrect,
         pointsAwarded,
       });
-
+  
       await game.save();
-
+  
       console.log(`Jugador ${player.username} (ID: ${socket.id}) - Correcta: ${isCorrect} - Puntos: ${pointsAwarded} - Total: ${player.score}`);
-
+  
       callback({ success: true, isCorrect, pointsAwarded });
-
+  
       io.to(pin).emit("player-answered", {
         playerId: socket.id,
         isCorrect,
