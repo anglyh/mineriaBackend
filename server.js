@@ -2,6 +2,8 @@ const express = require("express");
 const app = express();
 const http = require("http").createServer(app);
 const cors = require("cors"); // Importa el paquete cors
+const dotenv = require("dotenv");
+dotenv.config();
 
 const io = require("socket.io")(http, {
   cors: {
@@ -24,7 +26,7 @@ app.use(express.static(path.join(__dirname, "public")));
 app.get('/api/questions', questionController.getAllQuestions);
 
 mongoose  
-  .connect("mongodb://localhost/dots-go")
+  .connect(process.env.MONGODB_URI)
   .then(() => {
     console.log("Conectado a MongoDB");
     seedQuestions();
