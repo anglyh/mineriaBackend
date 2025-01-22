@@ -17,11 +17,13 @@ const path = require("path");
 const { Question, seedQuestions } = require("./models/question.model");
 const Game = require("./models/game.model");
 const questionController = require('./controllers/questionController');
+
+
 app.use(cors());
 
-
 app.use(express.json());
-app.use(express.static(path.join(__dirname, "public")));
+// app.use(express.static(path.join(__dirname, "public")));
+app.use(express.static('dist'));
 
 app.get('/api/questions', questionController.getAllQuestions);
 
