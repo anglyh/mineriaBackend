@@ -213,25 +213,51 @@ io.on("connection", (socket) => {
       const isEmptyAnswer = !answer.pictogram && (!answer.colors || answer.colors.length === 0) && !answer.number;
       let isCorrect = false;
   
+      // console.log('Respuesta recibida:', answer);
+      // console.log('Respuesta correcta:', currentQuestion.correctAnswer);
+      // console.log('¿Respuesta vacía?:', isEmptyAnswer);
+  
       if (!isEmptyAnswer) {
         isCorrect = true;
         const correctAnswer = currentQuestion.correctAnswer;
   
-        if (answer.pictogram !== correctAnswer.pictogram) isCorrect = false;
-        if (answer.number !== correctAnswer.number) isCorrect = false;
-  
-        const answerColors = Array.isArray(answer.colors) ? answer.colors : [];
-        const correctColors = new Set(Array.isArray(correctAnswer.colors) ? correctAnswer.colors : []);
-        if (answerColors.length !== correctColors.size || !answerColors.every(color => correctColors.has(color))) {
+        if (answer.pictogram !== correctAnswer.pictogram) {
+          // console.log('Pictograma incorrecto:', answer.pictogram, '!=', correctAnswer.pictogram);
           isCorrect = false;
         }
+  
+        if (answer.number !== correctAnswer.number) {
+          // console.log('Número incorrecto:', answer.number, '!=', correctAnswer.number);
+          isCorrect = false;
+        }
+  
+        const answerColors = Array.isArray(answer.colors) ? answer.colors.sort() : [];
+        const correctColors = Array.isArray(correctAnswer.colors) ? correctAnswer.colors.sort() : [];
+        
+        const answerColorsStr = JSON.stringify(answerColors);
+        const correctColorsStr = JSON.stringify(correctColors);
+        
+        if (answerColorsStr !== correctColorsStr) {
+          // console.log('Colores incorrectos:', answerColors, '!=', correctColors);
+          isCorrect = false;
+        }
+  
+        // console.log('¿Respuesta correcta?:', isCorrect);
       }
   
       let pointsAwarded = 0;
       if (isCorrect) {
-        // Ajustar el cálculo del puntaje para que los jugadores que respondan más rápido reciban más puntos
-        const timeFactor = (responseTime * 1000) / game.timeLimitPerQuestion;
-        pointsAwarded = Math.floor(100 * (1 - timeFactor)); // Invertir el factor de tiempo
+        // console.log('Calculando puntaje...');
+        // console.log('Tiempo restante:', responseTime);
+        // console.log('Límite de tiempo total:', game.timeLimitPerQuestion / 1000);
+        
+        // Nueva fórmula: más tiempo restante = más puntos
+        const timeFactor = responseTime / (game.timeLimitPerQuestion / 1000);
+        pointsAwarded = Math.floor(1000 * timeFactor);
+        
+        // console.log('Factor de tiempo:', timeFactor);
+        // console.log('Puntos otorgados:', pointsAwarded);
+        
         player.score += pointsAwarded;
         player.correctAnswers += 1;
       }
@@ -256,6 +282,7 @@ io.on("connection", (socket) => {
         playerScore: player.score,
       });
     } catch (error) {
+      console.error("Error en submit-answer:", error);
       callback({ success: false, error: error.message });
     }
   });
