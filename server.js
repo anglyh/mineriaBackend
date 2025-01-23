@@ -253,7 +253,7 @@ io.on("connection", (socket) => {
         
         // Nueva fórmula: más tiempo restante = más puntos
         const timeFactor = responseTime / (game.timeLimitPerQuestion / 1000);
-        pointsAwarded = Math.floor(1000 * timeFactor);
+        pointsAwarded = Math.floor(100 * timeFactor);
         
         // console.log('Factor de tiempo:', timeFactor);
         // console.log('Puntos otorgados:', pointsAwarded);
